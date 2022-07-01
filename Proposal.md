@@ -63,6 +63,12 @@ low cost trading platform, uniswap / polygon
 Milestone train model starting Thursday's class week 1
 Milestone paper trading Jul 11
 
+# Project name 
+* Sabot
+* SOTA - StableOps Trading Algorithm
+* NeuralOps | NeuralNet
+* Prophecy | Forecast
+
 ### github hints
 git checkout -b <branchname>
 git push
