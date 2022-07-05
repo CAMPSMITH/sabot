@@ -1,4 +1,5 @@
-# StableOps - Part Deux
+# Sabot
+SABot is a machine learning powered automated trading bot that capitalizes on stablecoin instability.
 
 ## Team Members
 
