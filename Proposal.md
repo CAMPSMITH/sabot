@@ -12,7 +12,7 @@ SABot is a machine learning powered automated trading bot that capitalizes on st
 | Yanick Wilisky       | yanickw@gmail.com           |
 
 ## Project Description / Outline
-Based on earlier analysis (see https://github.com/CAMPSMITH/StableOps), there may be lucrative arbitrage opportunities with relatively unstable stable coins, e.g. sUSD. This project will focus on arbitrage trading between a very stable coin, **USDC**, and a more volatile stablecoin, **sUSD**.  In order to minimize cost and maximize trading opportunities, a low cost platform and chain with high liquidity of the coins to trade will be used, Uniswap on Ethereum chain.
+Based on earlier analysis (see https://github.com/CAMPSMITH/StableOps), there may be lucrative arbitrage opportunities with relatively unstable stable coins, e.g. sUSD. This project will focus on arbitrage trading between a very stable coin, like **USDC** or **USDT**, and a more volatile stablecoin, **sUSD**.  In order to minimize cost and maximize trading opportunities, a low cost platform and chain with high liquidity of the coins to trade will be used, candidates being explored are Uniswap V2 on Ethereum chain, Uniswap Optimish, or KuCoin.
 
 ## Questions to Answer
 * Can machine learning models be used to implement a profitable automated arbitrage trading bot?
@@ -26,20 +26,24 @@ Based on earlier analysis (see https://github.com/CAMPSMITH/StableOps), there ma
 |   Uniswap subgraph API | 1 year of historical hourly data, sUSD, close price and volume |  |  |
 
 ## Rough breakdown of tasks
-* (T2) Uniswap API - python program to prep swap USDC <-> sUSD (K.)    KuCoin / USDT
+* (T2) Uniswap API - python program to prep swap USDC <-> sUSD (K.)  or   KuCoin / USDT
     * define a trading library with
         * buy function: `buy_susd(<amount of usdc>)` return tuple `(<amount of sUSD bought, gas fee, other fee>)`
         * sell function: `sell_susd(<amount of susd>)` return tuple `(<amount of sUSD received, gas fee, other fee>)`
         * file append each transaction to a CSV
         * prefer to get data from uniswap optimism, may need to settle on using uniswap v2
 * (T1.5) **get historical hourly sUSD data from uniswap** (Y.)
-    * the graph API - python function to get hourly sUSD Uniswap historical data, pair is sUSD and USDC
+    * the graph API - python function to get hourly sUSD Uniswap historical data, pair is sUSD and USDC  or KuCoin
         * get_susd_price_data(<paid_id or pair>,unixstarthour)  return dataset.
         * https://thegraph.com/hosted-service/subgraph/uniswap/uniswap-v2?query=Example%20query
         * unix time online tool: https://www.epochconverter.com/
     * Create a scheduler to schedule each hour data (M.)
     * objective is about a year of historical hourly data
     * file append to a CSV
+* (T1) skeleton framework for training and testing classifier models (M.)
+   * training dataset size
+   * fast and slow SMA window sizes
+   * Models    
 * (T1) **Identify historical hourly data for BTC, sUSD, USDC and download data (J.)**
     * CryptoCompare API - hourly BTC, Tehter, USDC, sUSD, USDT, OHLCV in that hour
     * file append to a CSV
@@ -60,8 +64,6 @@ Based on earlier analysis (see https://github.com/CAMPSMITH/StableOps), there ma
     * Slow SMA for each coin price and volume
     * add bollinger curves for each coin
     * add additional Finta indicators
-
-
 * ----------  Training Milestone 7/7 -----------------------------
 * (T1)Train - classifier (several classifer) slow, fast, training dataset size, mode
 * (T1)Backtesting
@@ -74,7 +76,4 @@ Based on earlier analysis (see https://github.com/CAMPSMITH/StableOps), there ma
 * ----------- Presentation   7/14  -------------------------------
 * **Create Github (M.)** 
 * **Revise proposal(M.)**
-* (T1)skeleton framework for looping classifier models (M.)
-   * training dataset size
-   * fast and slow SMA window sizes
-   * Models
+
