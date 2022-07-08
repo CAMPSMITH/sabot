@@ -1,0 +1,3 @@
+permutation,model,f1 score,strategy return,period,training months,fast window,slow window,factor,max transaction
+LogisticRegression-p1-tr(8)-sw(1)-lw(42)-fa(0.8)-max(100000),LogisticRegression,0.9948315826115449,238951.48724749277,1,8,1,42,0.8,100000
+LogisticRegression-p1-tr(8)-sw(1)-lw(42)-fa(1)-max(100000),LogisticRegression,0.9775863189377451,225836.87186248094,1,8,1,42,1.0,100000
