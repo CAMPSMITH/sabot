@@ -106,26 +106,140 @@ def number_of_iterations(start_date, end_date):
             last_iteration)
 
 
-def to_dataframe(time, close):
+def to_dataframe(time,
+                 open_price,
+                 high_price,
+                 low_price,
+                 close_price,
+                 volume_from,
+                 volume_to):
     """
-    Provide two list objects (time in epoch time) and close price.  Will convert to dataframe with time coverted to UTC time.
+    Provide seven list objects (time in epoch time), open, high, low, close, volume from, and volume to.  Will convert to dataframe with time coverted to UTC time.
     
     Parameters:
     
     time (list) : epoch time array
-    close (list) : close prices
+
+    open_price (list) : close prices
+    high_price (list) : close prices
+    low_price (list) : close prices    
+    close_price (list) : close prices
+    volume_from (list) : close prices
+    volume_to (list) : close prices
    
     Returns:
     
-    df_price : A two column dataframe with time in UTC and close price.
+    df_price : A seven column dataframe with time in UTC and all ohlcvv prices.
     
     """
     time = pd.Series(time)
-    close= pd.Series(close)
+    
+    open_price = pd.Series(open_price)
+    high_price = pd.Series(high_price)
+    low_price = pd.Series(low_price)
+    close_price = pd.Series(close_price)    
+    volume_from = pd.Series(volume_from)
+    volume_to = pd.Series(volume_to)
+   
     df_price = pd.DataFrame({'Epoch Time':time,
-                        'Close Price':close})
+                             'open': open_price,
+                             'high': high_price,
+                             'low': low_price,
+                             'close':close_price,
+                             'volume_from':volume_from,
+                             'volume_to':volume_to})   
+    
     df_price['Time (UTC)'] = df_price['Epoch Time'].apply(lambda x: epoch_to_datetime(x, time_zone_name=None))
     df_price.index = df_price['Time (UTC)']
     df_price.drop(columns=['Epoch Time','Time (UTC)'],inplace=True)
     
     return df_price
+
+
+def get_historical_prices(currency,
+                          base_currency,
+                          end_date,
+                          api_key,
+                          start_date=-1):
+    """
+    Provide the crypto currency, the base currency of comparison, the start date, and the end date of the time period.  Calls CryptoCompare API and returns a dataframe with at least as many hourly datapoints for the specified end date.  The default value for the start_date is the present time (-1).
+    
+    Parameters:
+    
+    currency (string) : currency to obtain
+    base_currency (string) : currency pair to get price compare
+    end_date (datetime string) : time period to end API calls
+    api_key (string) : API key from CryptoCompare.com
+    start_date (datetime string) : (=-1 default) Beginning date to begin call. A value of -1 is the present time.    
+   
+    Returns:
+    
+    df_historical_prices : A seven column dataframe with time in UTC and all ohlcvv prices.
+    
+    """
+    #Initialize all lists for data
+    time=[]
+    open_price=[]
+    high_price=[]
+    low_price=[]
+    close_price=[]
+    volume_from=[]
+    volume_to=[]
+    
+    start_date, end_date, api_calls, last_request = number_of_iterations(-1, end_date)
+    
+    #Make the API calls
+    for i in range(api_calls+1):
+        temp_time=[]
+
+        temp_open_price=[]
+        temp_high_price=[]
+        temp_low_price=[]
+        temp_close_price=[]
+        temp_volume_from=[]
+        temp_volume_to=[]
+
+        if(i < api_calls):
+            request_frames = 2000
+        else:
+            request_frames = last_request
+
+        response = crypto_compare_chart(currency,
+                                   base_currency,
+                                   request_frames,
+                                   start_date,
+                                   api_key)
+
+        price_list = response['Data']['Data']
+
+        for entry in price_list:
+            temp_time.append(entry['time'])
+
+            temp_open_price.append(entry['open'])
+            temp_high_price.append(entry['high'])
+            temp_low_price.append(entry['low'])
+            temp_close_price.append(entry['close'])
+            temp_volume_from.append(entry['volumefrom'])
+            temp_volume_to.append(entry['volumeto'])
+
+
+        time[:0] = temp_time
+        open_price[:0]=temp_open_price
+        high_price[:0]=temp_high_price
+        low_price[:0]=temp_low_price
+        close_price[:0]=temp_close_price
+        volume_from[:0]=temp_volume_from
+        volume_to[:0]=temp_volume_to  
+
+        print(f'Appended API request #{i} to dataframe')
+        start_date=time[0] - 3600
+   
+    #Create dataframe
+    df_historical_price = to_dataframe(time,
+                                         open_price,
+                                         high_price,
+                                         low_price,
+                                         close_price,
+                                         volume_from,
+                                         volume_to)
+    return df_historical_price
