@@ -1,0 +1,7 @@
+start:  2022-07-10 00:23:10.057581
+LogisticRegression-p1-tr(8)-sw(1)-lw(42)-fa(0.8)-max(100000) f1 score: 0.9948315826115449 cumulative return: 238951.48724749277
+LogisticRegression-p1-tr(8)-sw(1)-lw(42)-fa(1)-max(100000) f1 score: 0.9775863189377451 cumulative return: 225836.87186248094
+maximum cumulative return for LogisticRegression models was 238951.48724749277 from model permutation LogisticRegression-p1-tr(8)-sw(1)-lw(42)-fa(0.8)-max(100000)
+maximum f1 for LogisticRegression models was 0.9948315826115449 from model permutation LogisticRegression-p1-tr(8)-sw(1)-lw(42)-fa(0.8)-max(100000)
+2 permutations tested 
+end:  2022-07-10 00:23:15.973276
