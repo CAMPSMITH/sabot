@@ -354,10 +354,14 @@ def evaluate_model(model_name,
     )
     
     # save plot
-    model_family_plot.figure.savefig(f'images/{model_name}_returns.png', bbox_inches='tight')
+    # Be careful not to override existing plots when saving plots
+    # Be sure the path is set accordingly
+    # model_family_plot.figure.savefig(f'images/{model_name}_returns.png', bbox_inches='tight')
 
     # save final results for the family
-    results_df.to_csv(Path(f"results/{model_name}.csv"), index=False)
+    # Be careful not to override existing results files when saving tables
+    # Be sure the path is set accordingly
+    # results_df.to_csv(Path(f"results/{model_name}.csv"), index=False)
 
     # show the max return achieved with the model
     print(f"maximum cumulative return for {model_name} models was {max_return} from model permutation {selected_return_model}")
