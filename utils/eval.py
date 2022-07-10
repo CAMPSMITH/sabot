@@ -121,7 +121,13 @@ def create_train_test_datasets(months, df):
     return X_train_scaled, y_train, X_test_scaled, y_test, X_scaler
 
 
-def evaluate_model(model_name,training_dataset_months=[8],periods=[1]):
+def evaluate_model(model_name,
+                   factors = [0.8, 1],
+                   training_dataset_months=[8],
+                   short_window_sizes = [1,2,3],
+                   long_window_sizes = [42],
+                   periods=[1],
+                   txn_maxs=[100000]):
     print(f"start:  {datetime.now()}")    
 
     sources = [
@@ -133,13 +139,13 @@ def evaluate_model(model_name,training_dataset_months=[8],periods=[1]):
         {"provider":"kucoin","label":"sUSD/USDT","path":Path('data/sUSD_USDC_ku_historical_price.csv')}
     ]
 
-    factors = [0.1, 0.25, 0.5, 0.8, 1, 2, 3]
+    # factors = [0.1, 0.25, 0.5, 0.8, 1, 2, 3]
     # factors = [0.8,1]
-    short_window_sizes = [1,2,3,4,6]
+    # short_window_sizes = [1,2,3,4,6]
     # short_window_sizes = [1]
-    long_window_sizes = [24,42,60,180,252]
+    # long_window_sizes = [24,42,60,180,252]
     # long_window_sizes = [42]
-    txn_maxs = [20000,30000,100000]
+    # txn_maxs = [20000,30000,100000]
     # txn_maxs = [100000]
 
     # define a dictionary of models to train
