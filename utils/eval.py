@@ -26,7 +26,9 @@ from datetime import datetime
 
 import warnings
 warnings.filterwarnings('ignore')
-    
+
+import pickle
+
 def get_cryptocompare_data(file_path):
     """ Prep the data by creating a simple ohlcv df, inddex Time(UTC)
     """
@@ -127,7 +129,16 @@ def evaluate_model(model_name,
                    short_window_sizes = [1,2,3],
                    long_window_sizes = [42],
                    periods=[1],
-                   txn_maxs=[100000]):
+                   txn_maxs=[100000],
+                   fee_pcts=[0.001],
+                   fee_flats=[0],
+                   trials=1,
+                   save_results=False,
+                   save_figure=False,
+                   save_file_prefix='',
+                   show_legend=False,
+                   export=False
+                  ):
     print(f"start:  {datetime.now()}")    
 
     sources = [
@@ -185,183 +196,219 @@ def evaluate_model(model_name,
     max_f1 = 0
     selected_return_model = None
     selected_f1_model = None
+    
     for training_months in training_dataset_months:
         for fast_sma_window in short_window_sizes:
             for slow_sma_window in long_window_sizes:
                 for period in periods:
                     for factor in factors:
                         for txn_max in txn_maxs:
-                            # create a key for this model permutation
-                            model_key = f"{model_name}-p{period}-tr({training_months})-sw({fast_sma_window})-lw({slow_sma_window})-fa({factor})-max({txn_max})"
-                            permutation_count += 1
-                            # configure model permutation
-                            models[model_key] = {
-                                "model_name":model_name,
-                                "training_months":training_months,
-                                "fast_sma_window":fast_sma_window,
-                                "slow_sma_window":slow_sma_window,
-                                "model":alternate_models[model_name]["model"],
-                            }
+                            for fee_pct in fee_pcts:
+                                for fee_flat in fee_flats:
+                                    for trial in range(0,trials):
+                                        # create a key for this model permutation
+                                        model_key = f"{model_name}-p({period})-tr({training_months})-sw({fast_sma_window})-lw({slow_sma_window})-fa({factor})-max({txn_max}-fee_flat({fee_flat})-fee_pct({fee_pct})-#({trial}))"
+                                        permutation_count += 1
+                                        # configure model permutation
+                                        models[model_key] = {
+                                            "model_name":model_name,
+                                            "training_months":training_months,
+                                            "fast_sma_window":fast_sma_window,
+                                            "slow_sma_window":slow_sma_window,
+                                            "model":alternate_models[model_name]["model"],
+                                        }
 
-                            # get source data, for each source data, get engineered features
-                            datasets = []
-                            for source in sources:
-                                df = None
-                                if source['provider']=='cryptocompare':
-                                    df = get_cryptocompare_data(source['path'])
-                                elif source['provider']=='kucoin':
-                                    df = get_kucoin_data(source['path'])
+                                        # get source data, for each source data, get engineered features
+                                        datasets = []
+                                        for source in sources:
+                                            df = None
+                                            if source['provider']=='cryptocompare':
+                                                df = get_cryptocompare_data(source['path'])
+                                            elif source['provider']=='kucoin':
+                                                df = get_kucoin_data(source['path'])
 
-                                # add engineereg features derived from ohlcv
-                                df = add_engineered_features(df,fast_sma_window,slow_sma_window)
+                                            # add engineereg features derived from ohlcv
+                                            df = add_engineered_features(df,fast_sma_window,slow_sma_window)
 
-                                # prefix column names so they can be differentiated
-                                cols = df.columns
-                                new_cols = []
-                                for col in cols:
-                                    new_cols.append(f"{source['label']}_{col}")                                        
-                                df.columns=new_cols
+                                            # prefix column names so they can be differentiated
+                                            cols = df.columns
+                                            new_cols = []
+                                            for col in cols:
+                                                new_cols.append(f"{source['label']}_{col}")                                        
+                                            df.columns=new_cols
 
-                                datasets.append(df)
-                                # df = df.add_class_labels(df,slow_sma_window,factor,period)
+                                            datasets.append(df)
+                                            # df = df.add_class_labels(df,slow_sma_window,factor,period)
 
-                            # concatenate all of the coin and associated
-                            df = pd.concat(datasets,axis=1)
+                                        # concatenate all of the coin and associated
+                                        df = pd.concat(datasets,axis=1)
 
-                            # add class labels for training
-                            df = add_class_labels(df,slow_sma_window,factor,period)
+                                        # add class labels for training
+                                        df = add_class_labels(df,slow_sma_window,factor,period)
 
-                            # add actual returns
-                            df['returns'] = df['sUSD/USDT_close'].pct_change()
+                                        # add actual returns
+                                        df['returns'] = df['sUSD/USDT_close'].pct_change()
 
-                            # create training and testing datasets
-                            models[model_key]['X_train_scaled'], models[model_key]['y_train'], models[model_key]['X_test_scaled'], models[model_key]['y_test'], models[model_key]['x_scaler'] = create_train_test_datasets(training_months,df)
+                                        # create training and testing datasets
+                                        models[model_key]['X_train_scaled'], models[model_key]['y_train'], models[model_key]['X_test_scaled'], models[model_key]['y_test'], models[model_key]['x_scaler'] = create_train_test_datasets(training_months,df)
 
-                            # use random oversampling to address class imbalance
-                            random_oversampler = RandomOverSampler()
-                            models[model_key]['X_train_scaled'], models[model_key]['y_train'] = random_oversampler.fit_resample(models[model_key]['X_train_scaled'], models[model_key]['y_train'])            
+                                        # use random oversampling to address class imbalance
+                                        random_oversampler = RandomOverSampler()
+                                        models[model_key]['X_train_scaled'], models[model_key]['y_train'] = random_oversampler.fit_resample(models[model_key]['X_train_scaled'], models[model_key]['y_train'])            
 
-                            # train model
-                            models[model_key]['trained_model'] =  models[model_key]['model'].fit(models[model_key]['X_train_scaled'], models[model_key]['y_train'])
+                                        # train model
+                                        models[model_key]['trained_model'] =  models[model_key]['model'].fit(models[model_key]['X_train_scaled'], models[model_key]['y_train'])
 
-                            # get predictions
-                            y_predictions = models[model_key]['trained_model'].predict( models[model_key]['X_test_scaled'])
-                            # print(f"# of y_test: {len(models[model_key]['y_test'])}    # of predictions: {len(y_predictions)}")
-                            models[model_key]['y_predictions'] = pd.DataFrame(
-                                {
-                                    "y_test":models[model_key]['y_test'],
-                                    "y_prediction":y_predictions,
-                                    "Actual Returns":df.loc[models[model_key]['y_test'].index.min():models[model_key]['y_test'].index.max():,'returns'],
-                                    "close":df.loc[models[model_key]['y_test'].index.min():models[model_key]['y_test'].index.max():,'sUSD/USDT_close'],
-                                    "future close":df.loc[models[model_key]['y_test'].index.min():models[model_key]['y_test'].index.max():,'sUSD/USDT_future']
-                                })
+                                        # get predictions
+                                        y_predictions = models[model_key]['trained_model'].predict( models[model_key]['X_test_scaled'])
+                                        # print(f"# of y_test: {len(models[model_key]['y_test'])}    # of predictions: {len(y_predictions)}")
+                                        models[model_key]['y_predictions'] = pd.DataFrame(
+                                            {
+                                                "y_test":models[model_key]['y_test'],
+                                                "y_prediction":y_predictions,
+                                                "Actual Returns":df.loc[models[model_key]['y_test'].index.min():models[model_key]['y_test'].index.max():,'returns'],
+                                                "close":df.loc[models[model_key]['y_test'].index.min():models[model_key]['y_test'].index.max():,'sUSD/USDT_close'],
+                                                "future close":df.loc[models[model_key]['y_test'].index.min():models[model_key]['y_test'].index.max():,'sUSD/USDT_future']
+                                            })
 
-                            models[model_key]['y_predictions'].dropna()
+                                        models[model_key]['y_predictions'].dropna()
 
-                            # Classification reports
-                            models[model_key]['classification_report'] = classification_report_imbalanced(
-                                models[model_key]['y_predictions']['y_test'], 
-                                models[model_key]['y_predictions']['y_prediction'],
-                                output_dict=True
-                            )
+                                        # Classification reports
+                                        models[model_key]['classification_report'] = classification_report_imbalanced(
+                                            models[model_key]['y_predictions']['y_test'], 
+                                            models[model_key]['y_predictions']['y_prediction'],
+                                            output_dict=True
+                                        )
 
-                            # Print the classification report
-                            # print(f"{model_key}:\n{models[model_key]['classification_report']}") 
-                            # {-1: {
-                            #     'pre': 0.6790799561883899, 
-                            #     'rec': 0.2806699864191942, 
-                            #     'spe': 0.9420719652036378, 
-                            #     'f1': 0.39718129404228053, 
-                            #     'geo': 0.5142094181164019, 
-                            #     'iba': 0.24692310827785746, 
-                            #     'sup': 2209}, 
-                            #  0: {
-                            #      'pre': 0.4516821760916249, 
-                            #      'rec': 0.884992987377279, 
-                            #      'spe': 0.3060022650056625, 
-                            #      'f1': 0.5981042654028436, 
-                            #      'geo': 0.5203939456330897, 
-                            #      'iba': 0.2864894982201783, 
-                            #      'sup': 2852}, 
-                            #  1: {
-                            #      'pre': 0.779373368146214, 
-                            #      'rec': 0.27062556663644605, 
-                            #      'spe': 0.9666073898439044, 
-                            #      'f1': 0.4017496635262449, 
-                            #      'geo': 0.5114574005638033, 
-                            #      'iba': 0.2433825764634188, 
-                            #      'sup': 2206}, 
-                            #  'avg_pre': 0.620281111815607, 
-                            #  'avg_rec': 0.514792899408284, 
-                            #  'avg_spe': 0.6998887206449207, 
-                            #  'avg_f1': 0.47742212759146885, 
-                            #  'avg_geo': 0.515801178369128, 
-                            #  'avg_iba': 0.2613765183415491, 
-                            #  'total_support': 7267}      
+                                        # Print the classification report
+                                        # print(f"{model_key}:\n{models[model_key]['classification_report']}") 
+                                        # {-1: {
+                                        #     'pre': 0.6790799561883899, 
+                                        #     'rec': 0.2806699864191942, 
+                                        #     'spe': 0.9420719652036378, 
+                                        #     'f1': 0.39718129404228053, 
+                                        #     'geo': 0.5142094181164019, 
+                                        #     'iba': 0.24692310827785746, 
+                                        #     'sup': 2209}, 
+                                        #  0: {
+                                        #      'pre': 0.4516821760916249, 
+                                        #      'rec': 0.884992987377279, 
+                                        #      'spe': 0.3060022650056625, 
+                                        #      'f1': 0.5981042654028436, 
+                                        #      'geo': 0.5203939456330897, 
+                                        #      'iba': 0.2864894982201783, 
+                                        #      'sup': 2852}, 
+                                        #  1: {
+                                        #      'pre': 0.779373368146214, 
+                                        #      'rec': 0.27062556663644605, 
+                                        #      'spe': 0.9666073898439044, 
+                                        #      'f1': 0.4017496635262449, 
+                                        #      'geo': 0.5114574005638033, 
+                                        #      'iba': 0.2433825764634188, 
+                                        #      'sup': 2206}, 
+                                        #  'avg_pre': 0.620281111815607, 
+                                        #  'avg_rec': 0.514792899408284, 
+                                        #  'avg_spe': 0.6998887206449207, 
+                                        #  'avg_f1': 0.47742212759146885, 
+                                        #  'avg_geo': 0.515801178369128, 
+                                        #  'avg_iba': 0.2613765183415491, 
+                                        #  'total_support': 7267}      
 
-                            f1_score = 1-( \
-                                (1 - models[model_key]['classification_report'][-1]['f1'])**2 + \
-                                (1 - models[model_key]['classification_report'][0]['f1'])**2 + \
-                                (1 - models[model_key]['classification_report'][1]['f1'])**2 )
-                                
-                            if f1_score > max_f1:
-                                max_f1 = f1_score
-                                selected_f1_model = model_key
-            
-                            # backtest model
-                            models[model_key]['backtest'] = backtest_model(
-                                model_key,
-                                models[model_key]['y_predictions'],
-                                txn_max = txn_max
-                            )
+                                        f1_score = 1-( \
+                                            (1 - models[model_key]['classification_report'][-1]['f1'])**2 + \
+                                            (1 - models[model_key]['classification_report'][0]['f1'])**2 + \
+                                            (1 - models[model_key]['classification_report'][1]['f1'])**2 )
 
-                            # add the cumulative return to the list of returns for plotting
-                            # add the actual and signal returns if the 
-                            if returns is None:
-                                # This is the permutation for the model
-                                # create the returns dataframe and add the actual returns and the signal returns
-                                returns = {
-                                    "actual": models[model_key]['backtest']['actual_cum_return']
-                                    # "strategy": (1 +models[model_key]['backtest']['Strategy Returns']).cumprod()
-                                }
-                            returns[model_key] = models[model_key]['backtest']['strategy_cum_return']
-                            cum_return = returns[model_key].iloc[-1]
-                            print(f"{model_key} f1 score: {f1_score} cumulative return: {cum_return}")
+                                        if f1_score > max_f1:
+                                            max_f1 = f1_score
+                                            selected_f1_model = model_key
 
-                            if cum_return > max_return:
-                                max_return = cum_return
-                                selected_return_model = model_key
+                                        # backtest model
+                                        models[model_key]['backtest'] = backtest_model(
+                                            model_key,
+                                            models[model_key]['y_predictions'],
+                                            txn_max = txn_max,
+                                            fee_pct = fee_pct,
+                                            fee_flat = fee_flat
+                                        )
 
-                            df_dictionary = pd.DataFrame([{
-                                "permutation": model_key,
-                                "model": model_name,
-                                "f1 score": f1_score,
-                                "strategy return": cum_return,
-                                "period": period,
-                                "training months": training_months,
-                                "fast window": fast_sma_window,
-                                "slow window": slow_sma_window,
-                                "factor": factor,
-                                "max transaction": txn_max 
-                            }])
-                            results_df = pd.concat([results_df, df_dictionary], ignore_index=True)
-                    
+                                        # add the cumulative return to the list of returns for plotting
+                                        # add the actual and signal returns if the 
+                                        if returns is None:
+                                            # This is the permutation for the model
+                                            # create the returns dataframe and add the actual returns and the signal returns
+                                            returns = {
+                                                "actual": models[model_key]['backtest']['actual_cum_return']
+                                                # "strategy": (1 +models[model_key]['backtest']['Strategy Returns']).cumprod()
+                                            }
+                                        returns[model_key] = models[model_key]['backtest']['strategy_cum_return']
+                                        cum_return = returns[model_key].iloc[-1]
+                                        print(f"{model_key} f1 score: {f1_score} cumulative return: {cum_return}")
+
+                                        if cum_return > max_return:
+                                            max_return = cum_return
+                                            selected_return_model = model_key
+
+                                        df_dictionary = pd.DataFrame([{
+                                            "permutation": model_key,
+                                            "trial": trial,
+                                            "model": model_name,
+                                            "f1 score": f1_score,
+                                            "f1 avg": models[model_key]['classification_report']['avg_f1'],
+                                            "class 0 f1": models[model_key]['classification_report'][0]['f1'],
+                                            "class 1 f1": models[model_key]['classification_report'][1]['f1'],
+                                            "class -1 f1": models[model_key]['classification_report'][-1]['f1'],
+                                            "class 0 precision": models[model_key]['classification_report'][0]['pre'],
+                                            "class 1 precision": models[model_key]['classification_report'][1]['pre'],
+                                            "class -1 precision": models[model_key]['classification_report'][-1]['pre'],
+                                            "class 0 recall": models[model_key]['classification_report'][0]['rec'],
+                                            "class 1 recall": models[model_key]['classification_report'][1]['rec'],
+                                            "class -1 recall": models[model_key]['classification_report'][-1]['rec'],
+                                            "strategy return": cum_return,
+                                            "period": period,
+                                            "training months": training_months,
+                                            "fast window": fast_sma_window,
+                                            "slow window": slow_sma_window,
+                                            "factor": factor,
+                                            "max transaction": txn_max,
+                                            "fee_pct":fee_pct,
+                                            "fee_flat":fee_flat
+                                        }])
+                                        results_df = pd.concat([results_df, df_dictionary], ignore_index=True)
+                                        
+                                        if export:
+                                            print(f"exporting model {model_key}")
+                                            # save the model to disk
+                                            filename = Path(f'models/model-{model_key}.sav')
+                                            pickle.dump(models[model_key]['trained_model'], open(filename, 'wb'))
+                                            filename = Path(f'models/x-scaler-{model_key}.sav')
+                                            pickle.dump(models[model_key]['x_scaler'], open(filename, 'wb'))
+
     # create a plot for the family of returns for the range of training monts, and SMA window sizes
     returns_df = pd.DataFrame(returns)
     model_family_plot = returns_df.plot(
         figsize=(10,7),
-        title=f'{model_name} Cumulative Returns for various training and SMA window sizes'
+        title=f'{model_name} Cumulative Returns'
     )
+    
+    if not show_legend:
+        model_family_plot.get_legend().remove()
     
     # save plot
     # Be careful not to override existing plots when saving plots
     # Be sure the path is set accordingly
-    # model_family_plot.figure.savefig(f'images/{model_name}_returns.png', bbox_inches='tight')
+    if save_figure:
+        model_family_plot.figure.savefig(
+            f'images/{save_file_prefix}{model_name}_returns.png', 
+            bbox_inches='tight',
+            
+        )
 
     # save final results for the family
     # Be careful not to override existing results files when saving tables
     # Be sure the path is set accordingly
-    # results_df.to_csv(Path(f"results/{model_name}.csv"), index=False)
+    if save_results:
+        results_df.to_csv(Path(f"results/{save_file_prefix}{model_name}.csv"), index=False)
 
     # show the max return achieved with the model
     print(f"maximum cumulative return for {model_name} models was {max_return} from model permutation {selected_return_model}")
@@ -369,5 +416,7 @@ def evaluate_model(model_name,
 
     # print number of permutations tested
     print(f"{permutation_count} permutations tested ")
-
+        
     print(f"end:  {datetime.now()}")
+
+    
