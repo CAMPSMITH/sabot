@@ -6,7 +6,6 @@ from pathlib import Path
 from finta import TA
 from sklearn.preprocessing import StandardScaler
 from pandas.tseries.offsets import DateOffset
-from sklearn.metrics import classification_report
 from sklearn.metrics import confusion_matrix
 
 # Import a new classifiers from SKLearn
@@ -28,6 +27,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 import pickle
+import json
 
 def get_cryptocompare_data(file_path):
     """ Prep the data by creating a simple ohlcv df, inddex Time(UTC)
@@ -68,8 +68,10 @@ def add_engineered_features(df, fast_sma_window, slow_sma_window):
     """
     df['SMA_fast_close'] = df['close'].rolling(window=fast_sma_window).mean()
     df['SMA_slow_close'] = df['close'].rolling(window=slow_sma_window).mean()
+    df['std'] = df['close'].rolling(window=slow_sma_window).std()  
     df['SMA_fast_volume'] = df['volume'].rolling(window=fast_sma_window).mean()
     df['SMA_slow_volume'] = df['volume'].rolling(window=slow_sma_window).mean()
+    df['std_volume'] = df['close'].rolling(window=slow_sma_window).std()  
     ohlc = df.drop(columns=['volume'])
     # df['Bollinger Bands'] = TA.BBANDS(df.drop(columns=['volume'],MA=TA.KAMA(100)))
     bol_df = TA.BBANDS(ohlc)
@@ -84,21 +86,26 @@ def add_engineered_features(df, fast_sma_window, slow_sma_window):
     apz_df = TA.APZ(df)
     apz_df.columns=['APZ_UPPER','APZ_LOWER']
     df = pd.concat([df,apz_df],axis=1)
+    
+
     return df
 
 
 def create_train_test_datasets(months, df):
-    """ calculate the trainind start and end based on the given df.  df is assumed to have a column y that denotes the class labels
+    """ calculate the training start and end based on the given df.  df is assumed to have a column y that denotes the class labels, index needs to be datetime
     """
-    
+    # set the start date for backtesting
+    backtest_start_date = datetime.strptime('2022-01-01 00:00:00', '%Y-%m-%d %H:%M:%S')
+
     # separate df into X and y
     df = df.dropna()
+        
     y = df['y']
     X = df.drop(columns=['y'])
     
     # separate dataset into training and testing dataset based on months
-    training_begin = X.index.min()
-    training_end = X.index.min() + DateOffset(months=months)
+    training_begin = backtest_start_date - DateOffset(months=months)
+    training_end = backtest_start_date
 
     # create the training features dataset X_train and training classigication labels y_train for the training timeframe
     X_train = X.loc[training_begin:training_end]
@@ -108,20 +115,7 @@ def create_train_test_datasets(months, df):
     X_test = X.loc[training_end+DateOffset(hours=1):]
     y_test = y.loc[training_end+DateOffset(hours=1):]
     
-    # Use StandardScaler to scale the data.
-    # Scale the features DataFrames
-
-    # Create a StandardScaler instance
-    scaler = StandardScaler()
-
-    # Apply the scaler model to fit the X-train data
-    X_scaler = scaler.fit(X_train)
-
-    # Transform the X_train and X_test DataFrames using the X_scaler
-    X_train_scaled = X_scaler.transform(X_train)
-    X_test_scaled = X_scaler.transform(X_test)  
-    return X_train_scaled, y_train, X_test_scaled, y_test, X_scaler
-
+    return X_train, y_train, X_test, y_test
 
 def evaluate_model(model_name,
                    factors = [0.8, 1],
@@ -130,8 +124,8 @@ def evaluate_model(model_name,
                    long_window_sizes = [42],
                    periods=[1],
                    txn_maxs=[100000],
-                   fee_pcts=[0.001],
-                   fee_flats=[0],
+                   fee_pcts=[0.0004],
+                   fee_flats=[19],
                    trials=1,
                    save_results=False,
                    save_figure=False,
@@ -183,21 +177,18 @@ def evaluate_model(model_name,
             "model": GaussianNB()
         }
 
-    models = {}
-    max_return = None
-    selected_model = None
 
     permutation_count = 0
 
-    # construct the model permutations and evaluate the model permutations
-    results_df = pd.DataFrame()
-    returns = None
-    max_return = 0
-    max_f1 = 0
-    selected_return_model = None
-    selected_f1_model = None
     
     for training_months in training_dataset_months:
+        models = {}
+        results_df = pd.DataFrame()
+        returns = None
+        max_return = 0
+        max_f1 = 0
+        selected_return_model = None
+        selected_f1_model = None
         for fast_sma_window in short_window_sizes:
             for slow_sma_window in long_window_sizes:
                 for period in periods:
@@ -207,7 +198,7 @@ def evaluate_model(model_name,
                                 for fee_flat in fee_flats:
                                     for trial in range(0,trials):
                                         # create a key for this model permutation
-                                        model_key = f"{model_name}-p({period})-tr({training_months})-sw({fast_sma_window})-lw({slow_sma_window})-fa({factor})-max({txn_max}-fee_flat({fee_flat})-fee_pct({fee_pct})-#({trial}))"
+                                        model_key = f"{model_name}-p{period}-tr{training_months}-sw{fast_sma_window}-lw{slow_sma_window}-fa{factor}-max{txn_max}-fee_flat{fee_flat}-fee_pct{fee_pct}-#{trial}"
                                         permutation_count += 1
                                         # configure model permutation
                                         models[model_key] = {
@@ -248,9 +239,18 @@ def evaluate_model(model_name,
 
                                         # add actual returns
                                         df['returns'] = df['sUSD/USDT_close'].pct_change()
-
+                                        
                                         # create training and testing datasets
-                                        models[model_key]['X_train_scaled'], models[model_key]['y_train'], models[model_key]['X_test_scaled'], models[model_key]['y_test'], models[model_key]['x_scaler'] = create_train_test_datasets(training_months,df)
+                                        models[model_key]['X_train'], models[model_key]['y_train'], models[model_key]['X_test'], models[model_key]['y_test'] = create_train_test_datasets(training_months,df)
+                                        
+                                        # Use StandardScaler to scale the data.
+                                        # Create a StandardScaler instance
+                                        scaler = StandardScaler()
+
+                                        # Apply the scaler model to fit the X-train data
+                                        models[model_key]['x_scaler'] = scaler.fit(models[model_key]['X_train'].values)
+                                        models[model_key]['X_train_scaled'] = models[model_key]['x_scaler'].transform(models[model_key]['X_train'].values)
+                                        models[model_key]['X_test_scaled'] = models[model_key]['x_scaler'].transform(models[model_key]['X_test'].values)
 
                                         # use random oversampling to address class imbalance
                                         random_oversampler = RandomOverSampler()
@@ -261,14 +261,16 @@ def evaluate_model(model_name,
 
                                         # get predictions
                                         y_predictions = models[model_key]['trained_model'].predict( models[model_key]['X_test_scaled'])
-                                        # print(f"# of y_test: {len(models[model_key]['y_test'])}    # of predictions: {len(y_predictions)}")
+                                        
+                                        models[model_key]['X_test']['y_pred'] = y_predictions
+                                        models[model_key]['X_test'].to_csv('data/unscaled_X.csv')
+                                        
                                         models[model_key]['y_predictions'] = pd.DataFrame(
                                             {
                                                 "y_test":models[model_key]['y_test'],
                                                 "y_prediction":y_predictions,
                                                 "Actual Returns":df.loc[models[model_key]['y_test'].index.min():models[model_key]['y_test'].index.max():,'returns'],
-                                                "close":df.loc[models[model_key]['y_test'].index.min():models[model_key]['y_test'].index.max():,'sUSD/USDT_close'],
-                                                "future close":df.loc[models[model_key]['y_test'].index.min():models[model_key]['y_test'].index.max():,'sUSD/USDT_future']
+                                                "close":df.loc[models[model_key]['y_test'].index.min():models[model_key]['y_test'].index.max():,'sUSD/USDT_close']
                                             })
 
                                         models[model_key]['y_predictions'].dropna()
@@ -280,44 +282,12 @@ def evaluate_model(model_name,
                                             output_dict=True
                                         )
 
-                                        # Print the classification report
-                                        # print(f"{model_key}:\n{models[model_key]['classification_report']}") 
-                                        # {-1: {
-                                        #     'pre': 0.6790799561883899, 
-                                        #     'rec': 0.2806699864191942, 
-                                        #     'spe': 0.9420719652036378, 
-                                        #     'f1': 0.39718129404228053, 
-                                        #     'geo': 0.5142094181164019, 
-                                        #     'iba': 0.24692310827785746, 
-                                        #     'sup': 2209}, 
-                                        #  0: {
-                                        #      'pre': 0.4516821760916249, 
-                                        #      'rec': 0.884992987377279, 
-                                        #      'spe': 0.3060022650056625, 
-                                        #      'f1': 0.5981042654028436, 
-                                        #      'geo': 0.5203939456330897, 
-                                        #      'iba': 0.2864894982201783, 
-                                        #      'sup': 2852}, 
-                                        #  1: {
-                                        #      'pre': 0.779373368146214, 
-                                        #      'rec': 0.27062556663644605, 
-                                        #      'spe': 0.9666073898439044, 
-                                        #      'f1': 0.4017496635262449, 
-                                        #      'geo': 0.5114574005638033, 
-                                        #      'iba': 0.2433825764634188, 
-                                        #      'sup': 2206}, 
-                                        #  'avg_pre': 0.620281111815607, 
-                                        #  'avg_rec': 0.514792899408284, 
-                                        #  'avg_spe': 0.6998887206449207, 
-                                        #  'avg_f1': 0.47742212759146885, 
-                                        #  'avg_geo': 0.515801178369128, 
-                                        #  'avg_iba': 0.2613765183415491, 
-                                        #  'total_support': 7267}      
+    
 
-                                        f1_score = 1-( \
-                                            (1 - models[model_key]['classification_report'][-1]['f1'])**2 + \
-                                            (1 - models[model_key]['classification_report'][0]['f1'])**2 + \
-                                            (1 - models[model_key]['classification_report'][1]['f1'])**2 )
+                                        f1_score =  \
+                                            (models[model_key]['classification_report'][-1]['f1']) + \
+                                            (models[model_key]['classification_report'][0]['f1']) + \
+                                            (models[model_key]['classification_report'][1]['f1'])
 
                                         if f1_score > max_f1:
                                             max_f1 = f1_score
@@ -384,35 +354,35 @@ def evaluate_model(model_name,
                                             filename = Path(f'models/x-scaler-{model_key}.sav')
                                             pickle.dump(models[model_key]['x_scaler'], open(filename, 'wb'))
 
-    # create a plot for the family of returns for the range of training monts, and SMA window sizes
-    returns_df = pd.DataFrame(returns)
-    model_family_plot = returns_df.plot(
-        figsize=(10,7),
-        title=f'{model_name} Cumulative Returns'
-    )
-    
-    if not show_legend:
-        model_family_plot.get_legend().remove()
-    
-    # save plot
-    # Be careful not to override existing plots when saving plots
-    # Be sure the path is set accordingly
-    if save_figure:
-        model_family_plot.figure.savefig(
-            f'images/{save_file_prefix}{model_name}_returns.png', 
-            bbox_inches='tight',
-            
+        # create a plot for the family of returns for the range of training monts, and SMA window sizes
+        returns_df = pd.DataFrame(returns)
+        model_family_plot = returns_df.plot(
+            figsize=(10,7),
+            title=f'{model_name} Cumulative Returns'
         )
+    
+        if not show_legend:
+            model_family_plot.get_legend().remove()
+        
+        # save plot
+        # Be careful not to override existing plots when saving plots
+        # Be sure the path is set accordingly
+        if save_figure:
+            model_family_plot.figure.savefig(
+                f'images/{save_file_prefix}{model_name}-tr{training_months}_returns.png', 
+                bbox_inches='tight',
+                
+            )
 
-    # save final results for the family
-    # Be careful not to override existing results files when saving tables
-    # Be sure the path is set accordingly
-    if save_results:
-        results_df.to_csv(Path(f"results/{save_file_prefix}{model_name}.csv"), index=False)
+        # save final results for the family
+        # Be careful not to override existing results files when saving tables
+        # Be sure the path is set accordingly
+        if save_results:
+            results_df.to_csv(Path(f"results/{save_file_prefix}{model_name}-tr{training_months}.csv"), index=False)
 
-    # show the max return achieved with the model
-    print(f"maximum cumulative return for {model_name} models was {max_return} from model permutation {selected_return_model}")
-    print(f"maximum f1 for {model_name} models was {max_f1} from model permutation {selected_f1_model}")
+        # show the max return achieved with the model
+        print(f"maximum cumulative return for {model_name} models was {max_return} from model permutation {selected_return_model}")
+        print(f"maximum f1 for {model_name} models was {max_f1} from model permutation {selected_f1_model}")
 
     # print number of permutations tested
     print(f"{permutation_count} permutations tested ")
