@@ -440,3 +440,60 @@ def get_cryptocompare_ohlcv(currency, sma_window, df=None):
     
     
     return df # should be in a normalized ohlcv for this currency
+
+
+
+def transaction_quote(buy_token, sell_token, sell_amount):
+    #Ensure correct tokens to ensure correct decimals
+    
+    # check if sell token is ok. If not, just print an error and do nothing
+    if sell_token != 'SUSD' and sell_token != 'sUSD' and sell_token != 'USDT':
+        print("Sell token not equal to SUSD or USDT. Re-set and try again.")
+         
+    else:  
+        # next, check the buy and if that's not good, also print and do nothing
+        if buy_token != 'SUSD' and buy_token != 'sUSD' and buy_token != 'USDT':
+            print("Buy token not equal to SUSD or USDT. Re-set and try again.")
+        
+        else:
+            # if we got here, buy and sell are good and so now we do work
+            if sell_token == 'SUSD'or sell_token =='sUSD':
+                token_decimals = 1000000000000000000
+
+            if sell_token == 'USDT':
+                token_decimals = 1000000
+
+            decimalized_sell_amount = sell_amount * token_decimals
+
+            #get response
+            response = requests.get(f'https://api.0x.org/swap/v1/quote?buyToken={buy_token}&sellToken={sell_token}&sellAmount={decimalized_sell_amount}')
+            response = response.json()
+            
+            #print(response)
+            #Calculate gas cost and pricing
+            gas_units = float(response['gas'])
+            gas_price = float(response['gasPrice'])
+            total_gas_cost = gas_units*gas_price
+            percentage_of_eth = float(total_gas_cost/1000000000000000000)
+            gas_cost_in_stablecoin = float(response['buyTokenToEthRate'])*(float(percentage_of_eth))
+            price = response['price']
+            guaranteed_price = response['guaranteedPrice']
+            
+           # buy_token_multiplied_by_price = float(buy_token) * float(price)
+            
+            #output = float(price) * float(buy_token)
+            
+            #need to see total amount of tokens swapped
+            #print(f'{sell_amount}{sell_token} = {buy_token_multiplied_by_price}')
+            #print(f'Price: {sell_amount} {sell_token} = {output} {sell_token}')
+            
+            x = float(price)*float(sell_amount)
+            guaranteed_x = float(guaranteed_price)*float(sell_amount)
+            
+            
+            print(f'Conversion Price: {price}')
+            print(f'Total Swap: {sell_amount} {sell_token} = {x} {buy_token}')
+            print(f'Guaranteed Swap: {sell_amount} {sell_token} = {guaranteed_x} {buy_token}')
+            print(f'Gas Cost: $',(gas_cost_in_stablecoin))
+            return x,gas_cost_in_stablecoin
+    return
