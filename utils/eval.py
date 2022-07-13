@@ -86,8 +86,6 @@ def add_engineered_features(df, fast_sma_window, slow_sma_window):
     apz_df = TA.APZ(df)
     apz_df.columns=['APZ_UPPER','APZ_LOWER']
     df = pd.concat([df,apz_df],axis=1)
-    
-
     return df
 
 
