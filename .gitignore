@@ -143,3 +143,6 @@ dmypy.json
 trade.py
 evaluations/
 models/
+
+package/
+*-package.zip
