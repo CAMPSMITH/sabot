@@ -142,3 +142,5 @@ dmypy.json
 # sabot
 trade.py
 evaluations/
+
+models/
