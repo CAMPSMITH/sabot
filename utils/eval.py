@@ -280,31 +280,31 @@ def evaluate_model(model_name,
                                             output_dict=True
                                         )
 
-                                        if save_results:
-                                            class_report_txt = classification_report_imbalanced(
-                                                models[model_key]['y_predictions']['y_test'], 
-                                                models[model_key]['y_predictions']['y_prediction'],
-                                                output_dict=False
-                                            )
-                                            accuracy_score = geometric_mean_score(
-                                                models[model_key]['y_predictions']['y_test'], 
-                                                models[model_key]['y_predictions']['y_prediction'],
-                                                average='weighted'
-                                            )
-                                            with open(Path(f"results/{model_key}_classification_report.txt"), "w") as report_file:
-                                                print(models[model_key]['classification_report'])
+                                        # if save_results:
+                                        #     class_report_txt = classification_report_imbalanced(
+                                        #         models[model_key]['y_predictions']['y_test'], 
+                                        #         models[model_key]['y_predictions']['y_prediction'],
+                                        #         output_dict=False
+                                        #     )
+                                        #     accuracy_score = geometric_mean_score(
+                                        #         models[model_key]['y_predictions']['y_test'], 
+                                        #         models[model_key]['y_predictions']['y_prediction'],
+                                        #         average='weighted'
+                                        #     )
+                                        #     with open(Path(f"results/{model_key}_classification_report.txt"), "w") as report_file:
+                                        #         print(models[model_key]['classification_report'])
 
-                                                report_file.write(f"strategy 42: \n")
-                                                report_file.write('------------------\n')
-                                                report_file.write(f"\tbuy and hold, guess 0 all the time.\n")
-                                                report_file.write(f"\taccuracy: {float(models[model_key]['classification_report'][0]['sup'])/float(models[model_key]['classification_report']['total_support'])}\n\n")
-                                                report_file.write('sabot strategy: \n')
-                                                report_file.write('------------------\n')
-                                                report_file.write(f'weighted: geometric mean: {accuracy_score}\n')
-                                                report_file.write('------------------\n')
-                                                report_file.write(class_report_txt)
+                                        #         report_file.write(f"strategy 42: \n")
+                                        #         report_file.write('------------------\n')
+                                        #         report_file.write(f"\tbuy and hold, guess 0 all the time.\n")
+                                        #         report_file.write(f"\taccuracy: {float(models[model_key]['classification_report'][0]['sup'])/float(models[model_key]['classification_report']['total_support'])}\n\n")
+                                        #         report_file.write('sabot strategy: \n')
+                                        #         report_file.write('------------------\n')
+                                        #         report_file.write(f'weighted: geometric mean: {accuracy_score}\n')
+                                        #         report_file.write('------------------\n')
+                                        #         report_file.write(class_report_txt)
                                                                                                 
-                                                report_file.close()
+                                        #         report_file.close()
 
 
                                         f1_score =  \
