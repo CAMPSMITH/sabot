@@ -438,7 +438,9 @@ def get_cryptocompare_ohlcv(currency, sma_window, df=None):
                            cryptocompare_apikey)[currency]
         print(f"getting {sma_window+2} {currency} records")
     
-    
+    df.set_index('time',inplace=True)
+    print(f"{currency} shape: {df.shape}")
+
     return df # should be in a normalized ohlcv for this currency
 
 
