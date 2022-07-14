@@ -297,6 +297,12 @@ def run(model_file,
 
     schedule.every().hour.at(":01").do(on_trigger, sma_window=slow_sma_window, txn_max=txn_max,factor=factor)
 
+    done = False
+
+    while not done:
+        schedule.run_pending()
+        time.sleep(5)
+
     print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - sabot terminating")
 
 if __name__ == "__main__":
