@@ -206,9 +206,9 @@ def on_trigger(fast_sma_window,slow_sma_window, txn_max, factor):
         currency = source["currency"]
         # on activation, first get the latest ohlcv data
         if source["api"] == "cryptocompare":
-            ohlcv = get_cryptocompare_ohlcv(currency, slow_sma_window)
+            ohlcv = get_cryptocompare_ohlcv(currency, slow_sma_window+1)
         if source["api"] == "kucoin":
-            ohlcv = get_kucoin_ohlcv(currency, slow_sma_window)
+            ohlcv = get_kucoin_ohlcv(currency, slow_sma_window+1)
         ohlcv = ohlcv.reindex(['open','high','low','close','volume'], axis=1)
         if currency == "USDT":
             usdt_close = ohlcv['close'].iloc[-1]
@@ -228,8 +228,10 @@ def on_trigger(fast_sma_window,slow_sma_window, txn_max, factor):
     # add actual returns
     df['returns'] = df['sUSD/USDT_close'].pct_change()
     # print(df.columns)
+    # display(df)
     # scale input data
     X_scaled = x_scaler.transform([df.iloc[-1,:]])
+    print(f"X_scaled:{X_scaled}")
 
     # get prediction
     y = get_prediction(X_scaled)
@@ -259,7 +261,7 @@ def on_trigger(fast_sma_window,slow_sma_window, txn_max, factor):
         "portfolio value": wallet.get_total_value(),
         "gas":gas,
         "close":usdt_close
-    })     
+    })       
 
 
 def run(model_file, 
@@ -296,7 +298,7 @@ def run(model_file,
 
     print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - sabot ready")
 
-    schedule.every().hour.at(":02").do(on_trigger, fast_sma_window=fast_sma_window, slow_sma_window=slow_sma_window, txn_max=txn_max,factor=factor)
+    schedule.every().hour.at(":01").do(on_trigger, fast_sma_window=fast_sma_window, slow_sma_window=slow_sma_window, txn_max=txn_max,factor=factor)
 
     done = False
 
