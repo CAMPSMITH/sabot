@@ -27,7 +27,9 @@ load_dotenv()
 import json
 import requests
 import csv
-import random   # TODO: remove when integrating model
+import random
+import ccxt
+# TODO: remove when integrating model
  
 # ------ global references 
 # coin names for ordering purposes
@@ -101,20 +103,24 @@ def swap(txn,max_trade_amount):
     return None,None # buyamount,gas
 
 def get_kucoin_ohlcv(currency,sma_window,df=None):
-    global kucoin_apikey
+    exchange = ccxt.kucoin()
     if df is None:
         df = pd.DataFrame()
     rows = df.shape[0]
     if rows > 1:
-        print("popping oldest record")
-    print(f"getting {sma_window-rows} {currency} records")
+        df = df.iloc[1:,] # drop oldest row in df 
+        print('Dropping oldest record ...')
+    rows = df.shape[0]
+    limit = sma_window-rows
 
-    # datetime.now().replace ... 0 out minute seconds, microseconds
-    # get timestamp from ^^^ -> epoch in seconds
-    # multiply ^^^ 1000 , cctx uses epoch time in milli
-    # see Yanick;s
-    # see eval.oy where we prep kucoin
-    return df # should be in a normalized ohlcv for this currency
+    new_df = pd.DataFrame(exchange.fetchOHLCV(currency, timeframe = "1h", limit = limit , params={'price':'index'}))
+    new_df.columns = ['epoch', 'open', 'high', 'low', 'close', 'volume']
+    new_df['epoch'] = new_df['epoch']/1000  # from epoch in ms to epoch in seconds
+    new_df['Time (UTC)'] = new_df['epoch'].apply(epoch_to_datetime)
+    new_df.drop(columns=['epoch'], inplace = True)
+    new_df.set_index('Time (UTC)', inplace = True)
+    df = pd.concat([df, new_df])
+    return df
 
 def get_prediction(X_scaled):
     global model
