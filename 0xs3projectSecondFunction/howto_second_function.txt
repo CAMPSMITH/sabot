@@ -1,0 +1,13 @@
+# create another funciton in AWS
+# update the IAM role for the function to have the S3fullaccess permission
+# add a new file into S3 called something different
+
+# on your desktop (in downloads) create a new directory with this same code 
+    - cd ~/downloads    
+    - cp ./0xs3project ./0xs3project_secondfunction (or whatever name you want for #2)
+
+# in the code update the pushes into the "new_row" list with the variables from the second call
+    - the data is in #section_funtion.py
+# update the file_name variable with the new file
+# update update_function.sh with the name of your new funciton
+# run it

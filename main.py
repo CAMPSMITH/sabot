@@ -27,12 +27,13 @@ load_dotenv()
 import json
 import requests
 import csv
-import random   # TODO: remove when integrating model
+from utils.eval import add_engineered_features
+import ccxt
+
  
 # ------ global references 
 # coin names for ordering purposes
-# currencies=['BTC','ETH','USDT','sUSD/USDT']
-currencies=['BTC']
+currencies=['BTC','ETH','USDT','sUSD/USDT']
 wallet = None
 model = None
 x_scaler = None
@@ -101,20 +102,25 @@ def swap(txn,max_trade_amount):
     return None,None # buyamount,gas
 
 def get_kucoin_ohlcv(currency,sma_window,df=None):
-    global kucoin_apikey
+    exchange = ccxt.kucoin()
     if df is None:
         df = pd.DataFrame()
     rows = df.shape[0]
     if rows > 1:
-        print("popping oldest record")
-    print(f"getting {sma_window-rows} {currency} records")
+        df = df.iloc[1:,] # drop oldest row in df 
+        print('Dropping oldest record ...')
+    rows = df.shape[0]
+    limit = sma_window-rows
 
-    # datetime.now().replace ... 0 out minute seconds, microseconds
-    # get timestamp from ^^^ -> epoch in seconds
-    # multiply ^^^ 1000 , cctx uses epoch time in milli
-    # see Yanick;s
-    # see eval.oy where we prep kucoin
-    return df # should be in a normalized ohlcv for this currency
+    new_df = pd.DataFrame(exchange.fetchOHLCV(currency.upper(), timeframe = "1h", limit = limit , params={'price':'index'}))
+    new_df.columns = ['epoch', 'open', 'high', 'low', 'close', 'volume']
+    new_df['epoch'] = new_df['epoch']/1000  # from epoch in ms to epoch in seconds
+    new_df['time'] = new_df['epoch'].apply(epoch_to_datetime)
+    new_df.drop(columns=['epoch'], inplace = True)
+    new_df.set_index('time', inplace = True)
+    df = pd.concat([df, new_df])
+    print(f"{currency} shape: {df.shape}")
+    return df
 
 def get_prediction(X_scaled):
     global model
@@ -138,23 +144,23 @@ def build_txn(y, txn_max):
          "target_currency":"USDT",
         }
 
-prescaled_X = None    # TODO: remove when source data is integrated
-choices = [0,1,2]
-def get_X():          # TODO: remove when source data is integrated
-    global prescaled_X
-    # a mock that generates prescaled X records
-    if prescaled_X is None:
-        prescaled_X = pd.read_csv(Path('data/unscaled_X.csv'))
-    i = random.choice(choices)
-    x_series = prescaled_X.iloc[i,:]
-    df = x_series.to_frame().T
-    df['Time (UTC)'] = datetime.now()
-    df = df.set_index('Time (UTC)')
-    print(f"selected record {i}, y={df['y_pred'].iloc[0]}")
-    df = df.drop(columns=['y_pred'])
-    return df
+# prescaled_X = None    
+# choices = [0,1,2]
+# def get_X():          
+#     global prescaled_X
+#     # a mock that generates prescaled X records
+#     if prescaled_X is None:
+#         prescaled_X = pd.read_csv(Path('data/unscaled_X.csv'))
+#     i = random.choice(choices)
+#     x_series = prescaled_X.iloc[i,:]
+#     df = x_series.to_frame().T
+#     df['Time (UTC)'] = datetime.now()
+#     df = df.set_index('Time (UTC)')
+#     print(f"selected record {i}, y={df['y_pred'].iloc[0]}")
+#     df = df.drop(columns=['y_pred'])
+#     return df
 
-def on_trigger(sma_window, txn_max):
+def on_trigger(fast_sma_window,slow_sma_window, txn_max):
     global model
     global x_scaler
     global wallet
@@ -164,27 +170,35 @@ def on_trigger(sma_window, txn_max):
 
     # on activation, first get the latest ohlcv data
     currency = "BTC"
-    ohlcv_cache[currency] = get_cryptocompare_ohlcv(currency, sma_window,ohlcv_cache[currency])
+    ohlcv_cache[currency] = get_cryptocompare_ohlcv(currency, slow_sma_window,ohlcv_cache[currency])
     currency = "ETH"
-    ohlcv_cache[currency] = get_cryptocompare_ohlcv(currency, sma_window,ohlcv_cache[currency])
+    ohlcv_cache[currency] = get_cryptocompare_ohlcv(currency, slow_sma_window,ohlcv_cache[currency])
     currency = "USDT"
-    ohlcv_cache[currency] = get_cryptocompare_ohlcv(currency, sma_window,ohlcv_cache[currency])
-    # currency = "sUSD/USDT"
-    # ohlcv_cache[currency] = get_kucoin_ohlcv(currency, sma_window,ohlcv_cache[currency])
+    ohlcv_cache[currency] = get_cryptocompare_ohlcv(currency, slow_sma_window,ohlcv_cache[currency])
+    currency = "sUSD/USDT"
+    ohlcv_cache[currency] = get_kucoin_ohlcv(currency, slow_sma_window,ohlcv_cache[currency])
     # next add engineered features and prep for concatenation
-    ohlcv_data = []
+    ohlcv_data = [ohlcv_cache[currency]]
     for currency in currencies:
-        print(f"adding engineering data to {currency} and preparing to concetenate into X")
-        ohlcv_data.append(ohlcv_cache[currency])
-        # fix column names
+        print()
+        # add engineereg features derived from ohlcv
+        ohlcv_cache[currency] = add_engineered_features(ohlcv_cache[currency],fast_sma_window,slow_sma_window)
 
-    df = pd.concat(ohlcv_data)
+        # prefix column names so they can be differentiated
+        cols =  ohlcv_cache[currency].columns
+        new_cols = []
+        for col in cols:
+            new_cols.append(f"{currency}_{col}")                                        
+        ohlcv_cache[currency].columns=new_cols
+        ohlcv_data.append(ohlcv_cache[currency])
+
+    df = pd.concat(ohlcv_data,axis=1)
+
 
     # add actual returns
-    # df['return'] = df['sUSD/USDT_close'].pct_change()
+    df['return'] = df['sUSD/USDT_close'].pct_change()
 
     # scale input data
-    df = get_X()  # TODO: remove this when integrating source data is done.  this is  mock source of prescaled X data
     X_scaled = x_scaler.transform([df.iloc[-1,:]])
 
     # get prediction
@@ -222,6 +236,7 @@ def run(model_file,
         scaler_file,
         wallet_id,
         txn_max,
+        fast_sma_window,
         slow_sma_window
        ):
     global model
@@ -252,8 +267,9 @@ def run(model_file,
         "BTC":get_cryptocompare_ohlcv("BTC",slow_sma_window), 
         "ETH":get_cryptocompare_ohlcv("ETH",slow_sma_window), 
         "USDT":get_cryptocompare_ohlcv("USDT",slow_sma_window), 
-        # "sUSD/USDT":get_kucoin_ohlcv("sUSD/USDT",slow_sma_window)
+        "sUSD/USDT":get_kucoin_ohlcv("sUSD/USDT",slow_sma_window)
     }
+    print(ohlcv_cache)
 
     # At this point the ohlcv data caches are preloaded with enough data to be able to generate X
 
@@ -264,8 +280,8 @@ def run(model_file,
 
     # schedule.every().hour.at(":01").do(on_trigger, sma_window=slow_sma_window, txn_max=txn_max)
 
-    for i in range(20):  # TODO: replace when scheduler is integrated
-        on_trigger(slow_sma_window,txn_max)
+    for i in range(3):  # TODO: replace when scheduler is integrated
+        on_trigger(fast_sma_window,slow_sma_window,txn_max)
 
     print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - sabot terminating")
 
