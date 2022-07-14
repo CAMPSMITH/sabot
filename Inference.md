@@ -9,5 +9,6 @@ python main.py \
     --txn-max 100000 \
     --fast_sma_window 4 \
     --slow_sma_window 42 \
-    --factor=0.25
+    --factor=0.25 \
+    --run_at :33 > logs/sabot.log
 ```

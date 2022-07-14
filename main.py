@@ -50,7 +50,7 @@ kucoin_apikey = None
 results_path = 'results/sabot.csv'
 
 is_first_activation = True
-csv_columns = ['time','decision','portfolio value','gas','close']
+csv_columns = ['time','decision','portfolio value','USDT','sUSD/USDT','gas','close']
 
 def push(update):
     global is_first_activation
@@ -200,18 +200,16 @@ def on_trigger(fast_sma_window,slow_sma_window, txn_max, factor):
 
     ohlcv_data = []
 
-    usdt_close = None
+    susd_close = None
 
     for source in sources:
         currency = source["currency"]
         # on activation, first get the latest ohlcv data
         if source["api"] == "cryptocompare":
-            ohlcv = get_cryptocompare_ohlcv(currency, slow_sma_window+1)
+            ohlcv = get_cryptocompare_ohlcv(currency, slow_sma_window+3)
         if source["api"] == "kucoin":
-            ohlcv = get_kucoin_ohlcv(currency, slow_sma_window+1)
+            ohlcv = get_kucoin_ohlcv(currency, slow_sma_window+3)
         ohlcv = ohlcv.reindex(['open','high','low','close','volume'], axis=1)
-        if currency == "USDT":
-            usdt_close = ohlcv['close'].iloc[-1]
         # next add engineered features and prep for concatenation
         ohlcv = add_engineered_features(ohlcv,fast_sma_window,slow_sma_window)
 
@@ -221,16 +219,22 @@ def on_trigger(fast_sma_window,slow_sma_window, txn_max, factor):
         for col in cols:
             new_cols.append(f"{currency}_{col}")                                        
         ohlcv.columns=new_cols
+        print(f"{currency} ohlcv:\n{ohlcv}\n")
         ohlcv_data.append(ohlcv)
 
     df = pd.concat(ohlcv_data,axis=1)
+    df = df.dropna()
+    df = df.iloc[-slow_sma_window-1:,]
+    susd_close = df['sUSD/USDT_close'].iloc[-1]
+    susd_close = susd_close * 100000
     df['sUSD/USDT_offset'] = df['sUSD/USDT_std'] * factor
     # add actual returns
     df['returns'] = df['sUSD/USDT_close'].pct_change()
     # print(df.columns)
-    # display(df)
+    X = df.dropna().iloc[-1:,]
+    print(f"X: {X}")
     # scale input data
-    X_scaled = x_scaler.transform([df.iloc[-1,:]])
+    X_scaled = x_scaler.transform(X)
     print(f"X_scaled:{X_scaled}")
 
     # get prediction
@@ -248,8 +252,10 @@ def on_trigger(fast_sma_window,slow_sma_window, txn_max, factor):
             "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             "decision":y[0],
             "portfolio value": wallet.get_total_value(),
+            "USDT": wallet.get_balance("USDT"),
+            "sUSD/USDT": wallet.get_balance("sUSD/USDT"),
             "gas":None,
-            "close":usdt_close
+            "close":susd_close
         })     
         return
     amount, gas = swap(txn,txn_max)
@@ -259,8 +265,10 @@ def on_trigger(fast_sma_window,slow_sma_window, txn_max, factor):
         "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         "decision":y[0],
         "portfolio value": wallet.get_total_value(),
+        "USDT": wallet.get_balance("USDT"),
+        "sUSD/USDT": wallet.get_balance("sUSD/USDT"),
         "gas":gas,
-        "close":usdt_close
+        "close":susd_close
     })       
 
 
@@ -270,7 +278,8 @@ def run(model_file,
         txn_max,
         fast_sma_window,
         slow_sma_window,
-        factor
+        factor,
+        run_at
        ):
     global model
     global x_scaler
@@ -298,7 +307,7 @@ def run(model_file,
 
     print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - sabot ready")
 
-    schedule.every().hour.at(":01").do(on_trigger, fast_sma_window=fast_sma_window, slow_sma_window=slow_sma_window, txn_max=txn_max,factor=factor)
+    schedule.every().hour.at(run_at).do(on_trigger, fast_sma_window=fast_sma_window, slow_sma_window=slow_sma_window, txn_max=txn_max,factor=factor)
 
     done = False
 

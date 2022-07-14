@@ -27,8 +27,10 @@ class Wallet():
     return self.balances
 
   def get_balance(self,currency):
+    print(f"currency: {currency}")
+    print(f"wallet: {str(self)}")
     if currency in self.balances:
-        return self.balances[currency]['amount']
+      return self.balances[currency]['amount']
     return 0.00
 
   def __str__(self):
