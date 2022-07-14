@@ -27,6 +27,7 @@ load_dotenv()
 import json
 import requests
 import csv
+import time
 from utils.eval import add_engineered_features
 import ccxt
 exchange = ccxt.kucoin()
@@ -295,7 +296,7 @@ def run(model_file,
 
     print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - sabot ready")
 
-    schedule.every().hour.at(":01").do(on_trigger, sma_window=slow_sma_window, txn_max=txn_max,factor=factor)
+    schedule.every().hour.at(":02").do(on_trigger, fast_sma_window=fast_sma_window, slow_sma_window=slow_sma_window, txn_max=txn_max,factor=factor)
 
     done = False
 
