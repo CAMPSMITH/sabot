@@ -8,5 +8,6 @@ python main.py \
     --wallet-id 12345 \
     --txn-max 100000 \
     --fast_sma_window 4 \
-    --slow_sma_window 42
+    --slow_sma_window 42 \
+    --factor=0.25
 ```

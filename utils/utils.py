@@ -67,6 +67,12 @@ def crypto_compare_chart(fsym,
     response:   (json) The json response object
     
     """
+
+    print(f"fsym={fsym}")
+    print(f"tsym={tsym}")
+    print(f"limit={limit}")
+    print(f"toTs={toTs}")
+    
     #Base URL for API
     base_url = "https://min-api.cryptocompare.com/data/v2/"
     
@@ -302,6 +308,8 @@ def get_recent_prices(currency,
                                    start_date,
                                    cryptocompare_apikey)
 
+        print(f"crypt comp response:\n{response}\n")
+
         price_list = response['Data']['Data']
 
         for entry in price_list:
@@ -412,7 +420,8 @@ def get_cryptocompare_ohlcv(currency, sma_window, df=None):
     
     if df is None:
         df = pd.DataFrame()
-    
+    # print(f"{currency} shape: {df.shape}")
+    # print(df)
     sma_window=sma_window-2 
     
     rows = df.shape[0]
@@ -429,8 +438,7 @@ def get_cryptocompare_ohlcv(currency, sma_window, df=None):
             print("popping oldest record")
 
 
-            df = df.append(df_append.iloc[-1,:],
-                          ignore_index=True)
+            df = df.append(df_append.iloc[-1,:])
             print(f"getting {updated_entries+1} {currency} records")
     else:
         df = initialize_prices(sma_window,
@@ -439,7 +447,6 @@ def get_cryptocompare_ohlcv(currency, sma_window, df=None):
         print(f"getting {sma_window+2} {currency} records")
     
     df.set_index('time',inplace=True)
-    print(f"{currency} shape: {df.shape}")
 
     return df # should be in a normalized ohlcv for this currency
 
