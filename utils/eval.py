@@ -18,10 +18,11 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.naive_bayes import BernoulliNB
 from imblearn.over_sampling import RandomOverSampler
 from imblearn.metrics import classification_report_imbalanced
-
+from imblearn.metrics import geometric_mean_score
 from utils.utils import epoch_to_datetime
 from utils.trade import add_class_labels, backtest_model
 from datetime import datetime
+from sklearn.metrics import accuracy_score
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -86,8 +87,6 @@ def add_engineered_features(df, fast_sma_window, slow_sma_window):
     apz_df = TA.APZ(df)
     apz_df.columns=['APZ_UPPER','APZ_LOWER']
     df = pd.concat([df,apz_df],axis=1)
-    
-
     return df
 
 
@@ -278,11 +277,39 @@ def evaluate_model(model_name,
                                         # Classification reports
                                         models[model_key]['classification_report'] = classification_report_imbalanced(
                                             models[model_key]['y_predictions']['y_test'], 
-                                            models[model_key]['y_predictions']['y_prediction'],
+                                            y_predictions,
                                             output_dict=True
                                         )
 
-    
+                                        if save_results:
+                                            class_report_txt = classification_report_imbalanced(
+                                                models[model_key]['y_predictions']['y_test'], 
+                                                y_predictions,
+                                                output_dict=False,
+                                                digits = 5
+                                            )
+                                            y_42_predictions = [0.00 for x in range(0, len(y_predictions))]
+                                            class_report_42_txt = classification_report_imbalanced(
+                                                models[model_key]['y_predictions']['y_test'], 
+                                                y_42_predictions,
+                                                output_dict=False,
+                                                digits = 5
+                                            )
+                                            with open(Path(f"results/{model_key}_classification_report.txt"), "w") as report_file:
+                                                print(models[model_key]['classification_report'])
+
+                                                report_file.write(f"strategy 42: \n")
+                                                report_file.write('------------------\n')
+                                                report_file.write(f"\tbuy and hold, guess 0 all the time.\n")
+                                                report_file.write(f"\taccuracy: {accuracy_score(models[model_key]['y_predictions']['y_test'],y_42_predictions)}\n")
+                                                report_file.write(class_report_42_txt)
+                                                report_file.write('sabot strategy: \n')
+                                                report_file.write('------------------\n')
+                                                report_file.write(f"\taccuracy: {accuracy_score(models[model_key]['y_predictions']['y_test'],y_predictions)}\n")
+                                                report_file.write(class_report_txt)
+                                                                                                
+                                                report_file.close()
+
 
                                         f1_score =  \
                                             (models[model_key]['classification_report'][-1]['f1']) + \
