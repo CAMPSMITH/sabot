@@ -241,7 +241,7 @@ def evaluate_model(model_name,
                                         
                                         # create training and testing datasets
                                         models[model_key]['X_train'], models[model_key]['y_train'], models[model_key]['X_test'], models[model_key]['y_test'] = create_train_test_datasets(training_months,df)
-                                        
+                                        print(models[model_key]['X_train'].columns)
                                         # Use StandardScaler to scale the data.
                                         # Create a StandardScaler instance
                                         scaler = StandardScaler()

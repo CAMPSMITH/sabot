@@ -22,18 +22,25 @@ import pandas as pd
 from datetime  import datetime
 import schedule
 from dotenv import load_dotenv
-from utils.utils import *
+from utils.utils import epoch_to_datetime, transaction_quote
 load_dotenv()
 import json
 import requests
 import csv
+import time
 from utils.eval import add_engineered_features
 import ccxt
-
+exchange = ccxt.kucoin()
  
 # ------ global references 
-# coin names for ordering purposes
-currencies=['BTC','ETH','USDT','sUSD/USDT']
+# define data sources
+sources = [
+    {"currency":"BTC","api":"cryptocompare"},
+    {"currency":"ETH","api":"cryptocompare"},
+    {"currency":"USDT","api":"cryptocompare"},
+    {"currency":"sUSD/USDT","api":"kucoin"}
+]
+
 wallet = None
 model = None
 x_scaler = None
@@ -43,7 +50,7 @@ kucoin_apikey = None
 results_path = 'results/sabot.csv'
 
 is_first_activation = True
-csv_columns = ['time','decision','portfolio value','gas','close']
+csv_columns = ['time','decision','portfolio value','USDT','sUSD/USDT','gas','close']
 
 def push(update):
     global is_first_activation
@@ -101,25 +108,48 @@ def swap(txn,max_trade_amount):
     
     return None,None # buyamount,gas
 
-def get_kucoin_ohlcv(currency,sma_window,df=None):
-    exchange = ccxt.kucoin()
-    if df is None:
-        df = pd.DataFrame()
-    rows = df.shape[0]
-    if rows > 1:
-        df = df.iloc[1:,] # drop oldest row in df 
-        print('Dropping oldest record ...')
-    rows = df.shape[0]
-    limit = sma_window-rows
+def get_cryptocompare_ohlcv(currency,sma_window):
 
-    new_df = pd.DataFrame(exchange.fetchOHLCV(currency.upper(), timeframe = "1h", limit = limit , params={'price':'index'}))
-    new_df.columns = ['epoch', 'open', 'high', 'low', 'close', 'volume']
-    new_df['epoch'] = new_df['epoch']/1000  # from epoch in ms to epoch in seconds
-    new_df['time'] = new_df['epoch'].apply(epoch_to_datetime)
-    new_df.drop(columns=['epoch'], inplace = True)
-    new_df.set_index('time', inplace = True)
-    df = pd.concat([df, new_df])
-    print(f"{currency} shape: {df.shape}")
+    #Base URL for API
+    base_url = "https://min-api.cryptocompare.com/data/v2/"
+    resolution='histohour'
+
+    url_query=base_url+resolution
+
+    querystring = {
+        "fsym":currency,
+        "tsym":"USD",
+        "limit":sma_window+3,
+        "toTs":datetime.now().replace(minute=0,second=0).timestamp()
+    }
+
+    headers = {
+        'api_key': cryptocompare_apikey
+        }
+
+    response = requests.request("GET", url_query,
+                                params=querystring,
+                                headers=headers).json()  
+    assert "Data" in response, f"crypto compare response is missing Data element"
+    assert "Data" in response["Data"], f"crypto compare response is missing Data element"
+    df = pd.DataFrame.from_records(response["Data"]["Data"])
+    df['time'] = df['time'].apply(epoch_to_datetime)
+    df.drop(columns=['volumefrom','conversionType', 'conversionSymbol'],inplace=True)
+    df.set_index('time',inplace=True)
+    df.rename(columns={"volumeto": "volume"},inplace=True)
+    df = df.iloc[-sma_window:,]
+    return df    
+
+def get_kucoin_ohlcv(currency,sma_window):
+    global exchange
+    df = pd.DataFrame(exchange.fetchOHLCV(currency.upper(), timeframe = "1h", limit = sma_window + 5, params={'price':'index'}))
+    df.columns = ['epoch', 'open', 'high', 'low', 'close', 'volume']
+    df['epoch'] = df['epoch']/1000  # from epoch in ms to epoch in seconds
+    df['time'] = df['epoch'].apply(epoch_to_datetime)
+    df.drop(columns=['epoch'], inplace = True)
+    df.set_index('time', inplace = True)
+    df = df.iloc[-sma_window:,]
+    # print(df)    
     return df
 
 def get_prediction(X_scaled):
@@ -160,7 +190,7 @@ def build_txn(y, txn_max):
 #     df = df.drop(columns=['y_pred'])
 #     return df
 
-def on_trigger(fast_sma_window,slow_sma_window, txn_max):
+def on_trigger(fast_sma_window,slow_sma_window, txn_max, factor):
     global model
     global x_scaler
     global wallet
@@ -168,38 +198,44 @@ def on_trigger(fast_sma_window,slow_sma_window, txn_max):
 
     print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - sabot activating")
 
-    # on activation, first get the latest ohlcv data
-    currency = "BTC"
-    ohlcv_cache[currency] = get_cryptocompare_ohlcv(currency, slow_sma_window,ohlcv_cache[currency])
-    currency = "ETH"
-    ohlcv_cache[currency] = get_cryptocompare_ohlcv(currency, slow_sma_window,ohlcv_cache[currency])
-    currency = "USDT"
-    ohlcv_cache[currency] = get_cryptocompare_ohlcv(currency, slow_sma_window,ohlcv_cache[currency])
-    currency = "sUSD/USDT"
-    ohlcv_cache[currency] = get_kucoin_ohlcv(currency, slow_sma_window,ohlcv_cache[currency])
-    # next add engineered features and prep for concatenation
-    ohlcv_data = [ohlcv_cache[currency]]
-    for currency in currencies:
-        print()
-        # add engineereg features derived from ohlcv
-        ohlcv_cache[currency] = add_engineered_features(ohlcv_cache[currency],fast_sma_window,slow_sma_window)
+    ohlcv_data = []
+
+    susd_close = None
+
+    for source in sources:
+        currency = source["currency"]
+        # on activation, first get the latest ohlcv data
+        if source["api"] == "cryptocompare":
+            ohlcv = get_cryptocompare_ohlcv(currency, slow_sma_window+3)
+        if source["api"] == "kucoin":
+            ohlcv = get_kucoin_ohlcv(currency, slow_sma_window+3)
+        ohlcv = ohlcv.reindex(['open','high','low','close','volume'], axis=1)
+        # next add engineered features and prep for concatenation
+        ohlcv = add_engineered_features(ohlcv,fast_sma_window,slow_sma_window)
 
         # prefix column names so they can be differentiated
-        cols =  ohlcv_cache[currency].columns
+        cols =  ohlcv.columns
         new_cols = []
         for col in cols:
             new_cols.append(f"{currency}_{col}")                                        
-        ohlcv_cache[currency].columns=new_cols
-        ohlcv_data.append(ohlcv_cache[currency])
+        ohlcv.columns=new_cols
+        print(f"{currency} ohlcv:\n{ohlcv}\n")
+        ohlcv_data.append(ohlcv)
 
     df = pd.concat(ohlcv_data,axis=1)
-
-
+    df = df.dropna()
+    df = df.iloc[-slow_sma_window-1:,]
+    susd_close = df['sUSD/USDT_close'].iloc[-1]
+    susd_close = susd_close * 100000
+    df['sUSD/USDT_offset'] = df['sUSD/USDT_std'] * factor
     # add actual returns
-    df['return'] = df['sUSD/USDT_close'].pct_change()
-
+    df['returns'] = df['sUSD/USDT_close'].pct_change()
+    # print(df.columns)
+    X = df.dropna().iloc[-1:,]
+    print(f"X: {X}")
     # scale input data
-    X_scaled = x_scaler.transform([df.iloc[-1,:]])
+    X_scaled = x_scaler.transform(X)
+    print(f"X_scaled:{X_scaled}")
 
     # get prediction
     y = get_prediction(X_scaled)
@@ -216,8 +252,10 @@ def on_trigger(fast_sma_window,slow_sma_window, txn_max):
             "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             "decision":y[0],
             "portfolio value": wallet.get_total_value(),
+            "USDT": wallet.get_balance("USDT"),
+            "sUSD/USDT": wallet.get_balance("sUSD/USDT"),
             "gas":None,
-            "close":ohlcv_cache["USDT"]["close"].iloc[-1]
+            "close":susd_close
         })     
         return
     amount, gas = swap(txn,txn_max)
@@ -227,9 +265,11 @@ def on_trigger(fast_sma_window,slow_sma_window, txn_max):
         "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         "decision":y[0],
         "portfolio value": wallet.get_total_value(),
+        "USDT": wallet.get_balance("USDT"),
+        "sUSD/USDT": wallet.get_balance("sUSD/USDT"),
         "gas":gas,
-        "close":ohlcv_cache["USDT"]["close"].iloc[-1]
-    })     
+        "close":susd_close
+    })       
 
 
 def run(model_file, 
@@ -237,12 +277,13 @@ def run(model_file,
         wallet_id,
         txn_max,
         fast_sma_window,
-        slow_sma_window
+        slow_sma_window,
+        factor,
+        run_at
        ):
     global model
     global x_scaler
     global wallet
-    global ohlcv_cache
 
     print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - sabot starting")
 
@@ -261,27 +302,18 @@ def run(model_file,
     wallet = Wallet(wallet_id)   
     assert wallet is not None, f"unable to instantiate wallet"
 
-    # ---  Set up currency data buffers
-    # initialize ohlcv data
-    ohlcv_cache = {
-        "BTC":get_cryptocompare_ohlcv("BTC",slow_sma_window), 
-        "ETH":get_cryptocompare_ohlcv("ETH",slow_sma_window), 
-        "USDT":get_cryptocompare_ohlcv("USDT",slow_sma_window), 
-        "sUSD/USDT":get_kucoin_ohlcv("sUSD/USDT",slow_sma_window)
-    }
-    print(ohlcv_cache)
-
-    # At this point the ohlcv data caches are preloaded with enough data to be able to generate X
-
     # Configure and load scheduler
     # scheduler should call on_trigger()
 
     print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - sabot ready")
 
-    # schedule.every().hour.at(":01").do(on_trigger, sma_window=slow_sma_window, txn_max=txn_max)
+    schedule.every().hour.at(run_at).do(on_trigger, fast_sma_window=fast_sma_window, slow_sma_window=slow_sma_window, txn_max=txn_max,factor=factor)
 
-    for i in range(3):  # TODO: replace when scheduler is integrated
-        on_trigger(fast_sma_window,slow_sma_window,txn_max)
+    done = False
+
+    while not done:
+        schedule.run_pending()
+        time.sleep(5)
 
     print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - sabot terminating")
 
