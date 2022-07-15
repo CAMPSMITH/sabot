@@ -1,0 +1,7 @@
+﻿Model,LogisticRegression
+Period,1
+Training Months,6
+Fast SMA,4
+Slow SMA,24
+Factor,0.25
+Max Transaction,100000
