@@ -20,10 +20,10 @@ or KuCoin.
 
 | Dataset | URL         | Description | Records |
 |---------|-------------|-------------|---------|
-| BTC OHLCV |  | 1.5 years of hourly BTC OHLCV  | 13.1 K |
-| ETH OHLCV |  | 1.5 years of hourly BTC OHLCV  | 13.1 K |
-| USDT OHLCV |  | 1.5 years of hourly BTC OHLCV  | 13.1 K |
-| sUSD OHLCV |  | 1.5 years of hourly BTC OHLCV  | 13.1 K |
+| BTC OHLCV | https://min-api.cryptocompare.com/data/v2/ | 1.5 years of hourly BTC OHLCV  | 13.1 K |
+| ETH OHLCV | https://min-api.cryptocompare.com/data/v2/ | 1.5 years of hourly BTC OHLCV  | 13.1 K |
+| USDT OHLCV | https://min-api.cryptocompare.com/data/v2/ | 1.5 years of hourly BTC OHLCV  | 13.1 K |
+| sUSD OHLCV | https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=SUSD-USDT | 1.5 years of hourly BTC OHLCV  | 13.1 K |
 
 ---
 
